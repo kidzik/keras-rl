@@ -110,6 +110,11 @@ class Agent(object):
                     'episode': episode,
                 }
                 callbacks.on_step_end(episode_step, step_logs)
+
+                # Save the weights every 'log_interval' steps
+                if self.step % log_interval == 0 and self.step > 0:
+                    self.save_weights("backup_%d.h5f" % self.step, overwrite=True)
+                
                 episode_step += 1
                 self.step += 1
 
