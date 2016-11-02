@@ -16,7 +16,7 @@ class Agent(object):
         
     def fit(self, env, nb_steps, action_repetition=1, callbacks=None, verbose=1,
             visualize=False, nb_max_start_steps=0, start_step_policy=None, log_interval=10000,
-            nb_max_episode_steps=None):
+            nb_max_episode_steps=None, prefix=""):
         if not self.compiled:
             raise RuntimeError('Your tried to fit your agent but it hasn\'t been compiled yet. Please call `compile()` before `fit()`.')
         if action_repetition < 1:
@@ -113,7 +113,7 @@ class Agent(object):
 
                 # Save the weights every 'log_interval' steps
                 if self.step % log_interval == 0 and self.step > 0:
-                    self.save_weights("backup_%d.h5f" % self.step, overwrite=True)
+                    self.save_weights("%s_backup_%d.h5f" % (prefix,self.step), overwrite=True)
                 
                 episode_step += 1
                 self.step += 1
