@@ -88,10 +88,17 @@ class Agent(object):
                 # (forward step) and then use the reward to improve (backward step).
                 action = self.forward(observation)
                 reward = 0.
+                accumulated_info = {}
                 done = False
                 for _ in range(action_repetition):
                     callbacks.on_action_begin(action)
-                    observation, r, done, _ = env.step(action)
+                    observation, r, done, info = env.step(action)
+                    for key, value in info.items():
+                        if not np.isreal(value):
+                            continue
+                        if key not in accumulated_info:
+                            accumulated_info[key] = np.zeros_like(value)
+                        accumulated_info[key] += value
                     callbacks.on_action_end(action)
                     reward += r
                     if done:
@@ -108,6 +115,7 @@ class Agent(object):
                     'reward': reward,
                     'metrics': metrics,
                     'episode': episode,
+                    'info': accumulated_info,
                 }
                 callbacks.on_step_end(episode_step, step_logs)
 
@@ -215,11 +223,18 @@ class Agent(object):
 
                 action = self.forward(observation)
                 reward = 0.
+                accumulated_info = {}
                 for _ in range(action_repetition):
                     callbacks.on_action_begin(action)
-                    observation, r, d, _ = env.step(action)
+                    observation, r, d, info = env.step(action)
                     callbacks.on_action_end(action)
                     reward += r
+                    for key, value in info.items():
+                        if not np.isreal(value):
+                            continue
+                        if key not in accumulated_info:
+                            accumulated_info[key] = np.zeros_like(value)
+                        accumulated_info[key] += value
                     if d:
                         done = True
                         break
@@ -228,7 +243,14 @@ class Agent(object):
                 self.backward(reward, terminal=done)
                 episode_reward += reward
                 
-                callbacks.on_step_end(episode_step)
+                step_logs = {
+                    'action': action,
+                    'observation': observation,
+                    'reward': reward,
+                    'episode': episode,
+                    'info': accumulated_info,
+                }
+                callbacks.on_step_end(episode_step, step_logs)
                 episode_step += 1
                 self.step += 1
 
@@ -297,6 +319,31 @@ class Processor(object):
     def process_reward(self, reward):
         return reward
 
+    @property
+    def metrics_names(self):
+        return []
+
+    @property
+    def metrics(self):
+        return []
+
+
+class MultiInputProcessor(Processor):
+    def __init__(self, nb_inputs):
+        self.nb_inputs = nb_inputs
+
+    def process_state_batch(self, state_batch):
+        input_batches = [[] for x in range(self.nb_inputs)]
+        for state in state_batch:
+            processed_state = [[] for x in range(self.nb_inputs)]
+            for observation in state:
+                assert len(observation) == self.nb_inputs
+                for o, s in zip(observation, processed_state):
+                    s.append(o)
+            for idx, s in enumerate(processed_state):
+                input_batches[idx].append(s)
+        return [np.array(x) for x in input_batches]
+
 
 # Note: the API of the `Env` and `Space` classes are taken from the OpenAI Gym implementation.
 # https://github.com/openai/gym/blob/master/gym/core.py
@@ -313,9 +360,7 @@ class Env(object):
     observation_space = None
 
     def step(self, action):
-        """Run one timestep of the environment's dynamics. When end of
-        episode is reached, you are responsible for calling `reset()`
-        to reset this environment's state.
+        """Run one timestep of the environment's dynamics.
         Accepts an action and returns a tuple (observation, reward, done, info).
         Args:
             action (object): an action provided by the environment
